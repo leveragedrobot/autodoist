@@ -1,0 +1,6 @@
+{
+  "name": "autodoist",
+  "description": "Autonomous Todoist task execution for Claude Code",
+  "version": "1.0.0",
+  "repository": "https://github.com/leveragedrobot/autodoist"
+}
