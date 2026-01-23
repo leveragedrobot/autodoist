@@ -102,6 +102,22 @@ Reply with task numbers (e.g., "1, 2, 3") or "all" to execute.
 5. Executes approved tasks with logging
 6. Marks complete in Todoist
 
+## Scheduling (Clawdbot)
+
+If using with [Clawdbot](https://clawd.bot), set up a cron job to run Autodoist automatically:
+
+**Recommended: 3x daily** (saves tokens vs hourly)
+```bash
+# Cron schedule: 7am, 12pm, 5pm
+clawdbot cron add --name autodoist --schedule "0 7,12,17 * * *" --tz America/New_York
+```
+
+**Alternative: Hourly during work hours**
+```bash
+# Every hour from 7am-8pm
+clawdbot cron add --name autodoist --schedule "0 7-20 * * *" --tz America/New_York
+```
+
 ## Customization
 
 Edit `commands/autodoist.md` to:
