@@ -72,36 +72,41 @@ Sort each category by priority (P1 first → P4 last). Flag overdue P1/P2 as URG
 
 ### 4. Present Summary
 
-Format as a table, sorted by priority within each category:
+Format for Telegram (no markdown tables). Use invisible character (U+200E) before blank lines to preserve spacing between sections:
 
 ```
-🤖 AUTODOIST
+🤖 **AUTODOIST**
 
-🔀 SKILL ROUTED (will delegate to dedicated skills):
-| # | Task | Skill | Due |
-|---|------|-------|-----|
-| 1 | Complete managers schedule | /schedule-maker | Today |
+🔀 **SKILL ROUTED**
+1. Complete managers schedule → `/schedule-maker`
+   ⚠️ OVERDUE (Jan 19)
+‎
+✅ **CAN COMPLETE**
+2. Research competitor pricing
+   Work | P1
+3. Write README for new project
+   Side Projects | P2
+‎
+⚠️ **NEED APPROVAL**
+4. Post update to Twitter
+   P2 | ⚠️ OVERDUE (Today)
+5. Order office supplies
+   P3
+‎
+🚫 **HUMAN REQUIRED**
+• Call dentist — P1 ⚠️ URGENT (Tomorrow)
+• Gym workout — P4 Today
 
-✅ CAN COMPLETE (ready to execute):
-| # | Task | Project | Pri | Due |
-|---|------|---------|-----|-----|
-| 2 | Research competitor pricing | Work | P1 | — |
-| 3 | Write README for new project | Side Projects | P2 | — |
-
-⚠️ NEED APPROVAL:
-| # | Task | Pri | Due |
-|---|------|-----|-----|
-| 4 | Post update to Twitter | P2 | Today ⚠️ |
-| 5 | Order office supplies | P3 | — |
-
-🚫 HUMAN REQUIRED:
-| Task | Pri | Due | Reason |
-|------|-----|-----|--------|
-| Call dentist | P1 | Tomorrow ⚠️ URGENT | Phone call |
-| Gym workout | P4 | Today | Physical |
-
-Reply with task numbers (e.g., "1, 2, 3") or "all" to execute.
+Reply with numbers to execute (e.g., "1, 2") or "all".
 ```
+
+**Formatting rules:**
+- Headers: Bold with emoji prefix, no description text below
+- Numbered items (1-N): Executable tasks (Skill Routed, Can Complete, Need Approval)
+- Bullet items (•): Human Required (not numbered since not executable)
+- Blank line with U+200E character before each section header
+- No blank line between header and its items
+- Task details on second line, indented with spaces
 
 ### 5. Execute Approved Tasks
 
