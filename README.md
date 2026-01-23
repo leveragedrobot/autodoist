@@ -1,6 +1,6 @@
 # 🤖 Autodoist
 
-Autonomous Todoist task execution for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Scans your tasks, categorizes them by what AI can handle, routes to dedicated skills, and executes what it can — with your approval.
+Autonomous Todoist task execution for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Clawdbot](clawd.bot). Scans your tasks, categorizes them by what AI can handle, routes to dedicated skills, and executes what it can — with your approval.
 
 ## Features
 
