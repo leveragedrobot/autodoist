@@ -37,6 +37,7 @@ Before categorizing, check if any task matches a dedicated skill:
 | Matches a `/command` name | That skill | Delegate entirely |
 | "create schedule", "managers schedule" | /schedule-maker | Browser automation |
 | "check positions", "trading status" | /trading-status | Algo status check |
+| "order [item]", "buy [item] on amazon" | /amazon-ordering | **Spawn sub-agent** (browser-heavy) |
 
 **To discover available skills:**
 ```bash
@@ -44,6 +45,11 @@ ls ~/.claude/commands/  # List all available skills
 ```
 
 If a task matches a skill, execute via that skill rather than handling inline. Mark complete only after skill succeeds.
+
+**Browser-heavy skills** (Amazon, schedule-maker, etc.) should be spawned as sub-agents to avoid burning autodoist's context:
+```
+sessions_spawn task="Order [item] from Amazon. Use amazon-ordering skill. Confirm with user before checkout. Mark Todoist task [id] complete when done."
+```
 
 ### 3. Categorize Tasks
 
