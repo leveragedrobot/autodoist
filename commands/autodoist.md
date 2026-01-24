@@ -135,7 +135,7 @@ Reply with numbers to execute (e.g., "1, 2") or "all".
    ```
 5. **Mark complete**: Only after fully done
    ```bash
-   td task complete <id>
+   td task complete "id:<id>"  # id: prefix required!
    ```
 
 **Never mark Human Required tasks complete** — only report them.
@@ -183,10 +183,10 @@ td upcoming 7 --json         # Next 7 days
 td task list --json          # All tasks
 td task view <id> --json     # Full task with description
 
-# Execute
-td task complete <id>        # Mark complete
+# Execute (IMPORTANT: use "id:<id>" prefix for task operations!)
+td task complete "id:<id>"   # Mark complete
 td add "Task" --parent-id <id>  # Add subtask
-td task update <id> --due "tomorrow"  # Reschedule
+td task update "id:<id>" --due "tomorrow"  # Reschedule
 
 # Log
 td comment add --task-id <id> "Comment text"
