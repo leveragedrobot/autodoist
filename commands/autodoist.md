@@ -1,7 +1,7 @@
 ---
 name: autodoist
 description: Autonomous Todoist task execution. Scans all tasks, classifies using 5-signal priority system, routes to skills, and completes what it can — with your approval.
-version: 2.0.0
+version: 2.1.0
 ---
 
 # Autodoist
@@ -81,12 +81,7 @@ Match task content to existing skills/commands that can execute them:
 | "test" + software project | `/run-tests` | Run test suite, report results |
 | GitHub tasks (PR, issue, code) | GitHub MCP tools | Direct API access |
 
-**Skill chaining:** When a task maps to multiple skills (e.g., `/content-post` → `/post-to-x`), execute them in sequence automatically. Present content for approval between generation and posting steps.
-
-**Browser-heavy skills** should be spawned as sub-agents to avoid burning autodoist's context:
-```
-sessions_spawn task="Execute [skill] for [task]. Confirm with user before final action. Mark Todoist task [id] complete when done."
-```
+When a task matches a multi-skill pattern (e.g., content → post), execute it as a **skill chain**. See [Skill Chains](#skill-chains) for the full protocol.
 
 **Discovering your skills:**
 ```bash
@@ -183,39 +178,165 @@ When user approves (by number, "all", or "go"):
 **Batch similar tasks** for efficiency:
 1. Group research tasks together (shared context)
 2. Group code tasks in same project together
-3. Execute skill-routed tasks via their dedicated skills
+3. Execute skill-routed tasks via their skill chains
 
 **For each approved task:**
 
-1. **Check if task maps to a skill chain** — invoke skills in sequence
+1. **Check if task maps to a skill chain** — follow the chain protocol in [Skill Chains](#skill-chains)
 
-2. **Code tasks** — navigate to project, read existing code, implement
+2. **Single-skill tasks** — invoke the skill directly
 
-3. **Content tasks** — generate content, present for approval, then post if user confirms
+3. **Non-skill tasks** (research, writing, etc.) — execute inline
 
-4. **Research tasks** — search web/notes, compile findings
-
-5. **Log the work**: Add comment summarizing what was done
+4. **Log the work**: Add comment summarizing what was done
    ```bash
    td comment add --task-id <id> "Completed: [brief summary of work done]"
    ```
 
-6. **Handle subtasks**: If task is complex, create subtasks instead of partial completion
+5. **Handle subtasks**: If task is complex, create subtasks instead of partial completion
    ```bash
    td add "Subtask description" --parent-id <id>
    ```
 
-7. **Mark complete**: Only after fully done
+6. **Mark complete**: Only after fully done
    ```bash
    td task complete "id:<id>"  # id: prefix required!
    ```
 
-8. **Add follow-up tasks** if work spawns new items:
+7. **Add follow-up tasks** if work spawns new items:
    ```bash
    td add "Follow-up task #ProjectName"
    ```
 
 **Never mark Human Required tasks complete** — only report them.
+
+## Skill Chains
+
+A skill chain is an ordered sequence of skills where each step's output feeds the next. Chains have **approval gates** (pause for user confirmation) and **failure rules** (what happens when a step breaks).
+
+### Chain Protocol
+
+For every chain execution, follow this loop:
+
+```
+for each step in chain:
+  1. Execute the skill
+  2. Capture the output (content, result, artifact)
+  3. If step has an APPROVAL GATE:
+     → Present output to user
+     → Wait for approval
+     → If rejected: log rejection, STOP chain, keep task open
+  4. If step FAILED:
+     → Follow the failure rule for that step type
+  5. Pass output as input to next step
+after all steps complete:
+  → Log work as comment on Todoist task
+  → Mark task complete
+```
+
+### Approval Gates
+
+Gates prevent irreversible actions without user consent. A gate pauses the chain and shows the user what's about to happen.
+
+**Always gate before:**
+- Posting to social media (Twitter, Reddit, etc.)
+- Sending messages (email, Slack, Telegram)
+- Deploying to production
+- Publishing content
+- Any action visible to others
+
+**Never gate on:**
+- Research/analysis (internal only)
+- Code generation (can be reviewed before commit)
+- Running tests (non-destructive)
+- Fetching data
+
+**Gate format:**
+```
+Ready to [action]. Here's what I'll [post/send/deploy]:
+
+[content preview]
+
+Proceed? (yes / edit / skip)
+```
+
+- **yes** → continue chain
+- **edit** → user provides corrections, re-run current step with edits
+- **skip** → skip this step, continue chain if possible (otherwise stop)
+
+### Failure Handling
+
+What happens when a step in the chain fails:
+
+| Step Type | On Failure | Action |
+|-----------|-----------|--------|
+| **Generate** (content, code) | Retry once with adjusted approach | If second attempt fails, log blocker and stop |
+| **Test/Validate** | Stop chain, do not proceed to deploy | Log failures as comment, keep task open |
+| **Post/Send** | Retry once | If retry fails, log error, keep content for manual posting |
+| **Deploy** | Stop chain | Log error, do not mark complete |
+| **Browser automation** | Retry once | If retry fails, stop and report — browser state may be stale |
+
+**On any failure:**
+```bash
+td comment add --task-id <id> "Chain stopped at [step]: [error]. Output so far: [summary]"
+```
+
+### Context Strategy
+
+Not all chains should run in the main autodoist context. Browser-heavy chains burn tokens on screenshots and DOM reads.
+
+| Chain Type | Strategy | Why |
+|-----------|----------|-----|
+| Research → Write | **Inline** | Text-only, fast, benefits from autodoist context |
+| Code → Test | **Inline** | Needs project context already loaded |
+| Content → Post (browser) | **Inline if short**, sub-agent if complex | Simple tweet = inline; multi-platform campaign = sub-agent |
+| Browser automation (scheduling, ordering) | **Sub-agent** | Heavy DOM interaction, protect autodoist context |
+
+**Spawning a sub-agent:**
+```
+sessions_spawn task="Execute [chain description]. Task ID: [id]. Confirm with user before [gate actions]. Mark Todoist task complete when done: td task complete 'id:<id>'"
+```
+
+The sub-agent gets the full chain instructions and handles it independently. Autodoist moves on to the next task.
+
+### Example Chains
+
+**Content → Post chain:**
+```
+1. /content-post    → generates tweet content
+   HANDOFF: tweet text + optional image
+2. GATE             → show user the tweet, wait for approval
+3. /post-to-x      → posts via browser automation
+   HANDOFF: post URL
+4. Log + complete   → add comment with post URL, mark task done
+```
+
+**Code → Test → Deploy chain:**
+```
+1. /code-task       → implements feature/fix
+   HANDOFF: list of changed files
+2. /run-tests       → runs project test suite
+   HANDOFF: pass/fail + test output
+   ON FAIL: stop chain, log failures
+3. GATE             → show test results, ask "deploy?"
+4. /deploy          → pushes to production
+   HANDOFF: deploy URL
+5. Log + complete   → add comment with deploy URL, mark task done
+```
+
+**Defining your own chains:**
+
+Add new chains by following this pattern:
+```
+Chain name: [descriptive name]
+Trigger: [task pattern that activates this chain]
+Steps:
+  1. [skill]     → [what it does]
+     HANDOFF: [what passes to next step]
+  2. GATE        → [what user sees]
+  3. [skill]     → [what it does]
+  N. Log + complete
+```
 
 ## Step 6: Sweep Project Backlogs
 
@@ -260,6 +381,7 @@ Edit this file to add your own:
 - **Labels** (Signal 1): Map your Todoist labels
 - **Projects** (Signal 2): Define per-project capabilities
 - **Skills** (Signal 3): Add your custom `/commands`
+- **Chains**: Define multi-skill sequences with gates
 - **Capabilities**: What your setup can/cannot do
 
 ## Quick Reference: td CLI Commands
