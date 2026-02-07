@@ -20,16 +20,18 @@ td inbox --json
 # Upcoming 7 days
 td upcoming 7 --json
 
-# Software project backlogs (undated tasks Claude can tackle)
-td task list --project "Schedule App" --json
-td task list --project "Browser Extension" --json
-td task list --project "Trading Alerts" --json
-td task list --project "Trading Algo" --json
+# All tasks (for backlog scanning)
+td task list --json
 ```
 
 Also fetch project list for ID-to-name mapping:
 ```bash
 td project list --json
+```
+
+**Optional: Per-project backlog fetching** for targeted scanning:
+```bash
+td task list --project "Project Name" --json
 ```
 
 ## Step 2: Classify Using Signals (in priority order)
@@ -38,57 +40,57 @@ Use these concrete signals to classify tasks. Check them in order — the first 
 
 ### Signal 1: Labels (strongest signal)
 
+Labels are the most reliable indicator. Map your Todoist labels to outcomes:
+
 | Label | Meaning | Claude? |
 |-------|---------|---------|
 | `computer` | Done at computer | Almost always YES |
 | `work` | Work context | Maybe (check content) |
 | `home` | Physical/household | NO |
 | `errands` | Out-of-house | NO |
-| `iphone` | Phone-only | NO |
+| `phone` | Phone-only | NO |
 | `quick` | Fast task | Check other signals |
 | `delegated` | Waiting on someone | NO |
-| `leadership meeting` | Meeting prep | Partial (can draft agendas) |
-| `district call` | Meeting prep | Partial (can draft notes) |
+| `meeting` | Meeting prep | Partial (can draft agendas/notes) |
+
+Customize this table with your own labels.
 
 ### Signal 2: Project Context
 
+Define what Claude can do per project. Examples:
+
 | Project | Claude Can Do |
 |---------|--------------|
-| **Schedule App** | Code features, run tests, deploy, browser test |
-| **Browser Extension** | Code features, deploy, draft marketing content |
-| **Trading Alerts** | Code features (via SSH to remote server), draft content |
-| **Trading Algo** | Code features (via SSH), run tests, **but NOT live algo fixes** |
-| **Retail Manager** | Only `computer`-labeled tasks, and only prep/drafting |
+| **Software projects** | Code features, run tests, deploy, browser test |
+| **Content projects** | Draft posts, marketing content, documentation |
+| **Work projects** | Only `computer`-labeled tasks, prep/drafting only |
 | **Personal** | Research, writing, planning — NOT physical tasks |
+
+Customize with your own projects and boundaries.
 
 ### Signal 3: Skill Mapping (task content → available skill)
 
-Match task content to existing skills that can execute them:
+Match task content to existing skills/commands that can execute them:
 
-| Task Pattern | Skill Chain | Execution Method |
-|-------------|------------|-----------------|
-| "posting scans", "scan tweets" | `/content-post` → `/post-to-x` | SSH scan → format tweets → post via browser → mark done |
+| Task Pattern | Skill | Execution Method |
+|-------------|-------|-----------------|
 | "tweet", "post to twitter/X" | `/content-post` → `/post-to-x` | Generate content → post via browser → mark done |
-| "reddit", "post to reddit" | `/content-post` | Draft subreddit-specific posts (user submits) |
-| "schedule" + Retail Manager project | `/schedule-maker` | Browser automation on example-app.com |
-| "deploy" + Schedule Maker | `/deploy` | Git push + Vercel monitoring |
-| "deploy" + trading-algo/algo | `/deploy-trading-algo` | SSH + restart algo |
-| "health check", "algo status" | `/health` | System health check |
-| "trading status", "positions" | `/trading-status` | Check positions/P&L |
+| "reddit", "post to reddit" | `/content-post` | Draft posts (user submits) |
+| "deploy" | `/deploy` | Git push + monitoring |
 | Coding tasks (implement, add, build, fix) | `/code-task` | Read task → implement → test → commit/PR |
-| "test" + any software project | `/run-tests` | Run project test suite, report results |
-| "Telegram" setup tasks | `/telegram-setup` | Create channels, configure bots, wire up alerts |
-| "Product Hunt", "launch", "Hacker News" | `/launch-prep` | Prep all launch content and checklist |
-| "landing page", "email list", "waitlist" | `/landing-page` | Build page, deploy to Vercel, wire email |
+| "test" + software project | `/run-tests` | Run test suite, report results |
 | GitHub tasks (PR, issue, code) | GitHub MCP tools | Direct API access |
-| "Stripe", "subscription" | Stripe CLI + code | Build integration |
-| "Rotate token" | Partial — needs biometric on remote server | Document steps, can't execute headlessly |
 
 **Skill chaining:** When a task maps to multiple skills (e.g., `/content-post` → `/post-to-x`), execute them in sequence automatically. Present content for approval between generation and posting steps.
 
-**Browser-heavy skills** (Amazon, schedule-maker, etc.) should be spawned as sub-agents to avoid burning autodoist's context:
+**Browser-heavy skills** should be spawned as sub-agents to avoid burning autodoist's context:
 ```
-sessions_spawn task="Order [item] from Amazon. Use amazon-ordering skill. Confirm with user before checkout. Mark Todoist task [id] complete when done."
+sessions_spawn task="Execute [skill] for [task]. Confirm with user before final action. Mark Todoist task [id] complete when done."
+```
+
+**Discovering your skills:**
+```bash
+ls ~/.claude/commands/  # List all available skills
 ```
 
 ### Signal 4: Task Description
@@ -185,19 +187,11 @@ When user approves (by number, "all", or "go"):
 
 **For each approved task:**
 
-1. **Check if task maps to a skill chain** — invoke skills in sequence:
-   - Scan/tweet posting → `/content-post` (generate) → present for approval → `/post-to-x` (post via browser)
-   - Schedule tasks → `/schedule-maker`
-   - Deploy tasks → `/deploy` or `/deploy-trading-algo`
-   - Code tasks → `/code-task`
-   - Test tasks → `/run-tests`
+1. **Check if task maps to a skill chain** — invoke skills in sequence
 
-2. **Code tasks** — navigate to project, read existing code, implement:
-   - Schedule Maker: `~/projects/schedule-app`
-   - Browser Extension: `~/projects/browser-extension`
-   - Trading Algo/Trading Alerts: SSH to remote server `~/projects/trading-algo`
+2. **Code tasks** — navigate to project, read existing code, implement
 
-3. **Content tasks** — generate via `/content-post`, present for approval, then post via `/post-to-x` if user confirms
+3. **Content tasks** — generate content, present for approval, then post if user confirms
 
 4. **Research tasks** — search web/notes, compile findings
 
@@ -225,13 +219,10 @@ When user approves (by number, "all", or "go"):
 
 ## Step 6: Sweep Project Backlogs
 
-After handling today's tasks, scan software project backlogs for undated tasks Claude can knock out:
+After handling today's tasks, scan project backlogs for undated tasks Claude can knock out:
 
 ```bash
-td task list --project "Schedule App" --json
-td task list --project "Browser Extension" --json
-td task list --project "Trading Alerts" --json
-td task list --project "Trading Algo" --json
+td task list --project "Project Name" --json
 ```
 
 Present any low-hanging fruit: tasks with clear descriptions, test tasks, small code changes.
@@ -263,26 +254,13 @@ When triggered by cron:
 - If no actionable tasks, send brief "Nothing needs attention" or skip message entirely
 - Prioritize URGENT (overdue P1/P2) items at top of message
 
-## Capabilities Reference
+## Customization
 
-**What Claude has access to:**
-- `td` CLI (Todoist)
-- `gh` CLI (GitHub)
-- `vercel` CLI (deployments)
-- `stripe` CLI (payments)
-- Browser automation (Chrome via MCP)
-- SSH to remote server (user@remote-server)
-- All local codebases (Schedule Maker, Browser Extension)
-- QMD knowledge base (notes, learnings, reference docs)
-- GitHub MCP (PRs, issues, code search)
-
-**What Claude CANNOT do:**
-- 1Password on remote server (biometric auth required headlessly)
-- Submit forms on employer-system, employer-system, or other employer systems
-- Physical tasks
-- Phone calls
-- Financial transactions (trading, purchases)
-- Post to social media without user confirmation (always confirms before clicking Post)
+Edit this file to add your own:
+- **Labels** (Signal 1): Map your Todoist labels
+- **Projects** (Signal 2): Define per-project capabilities
+- **Skills** (Signal 3): Add your custom `/commands`
+- **Capabilities**: What your setup can/cannot do
 
 ## Quick Reference: td CLI Commands
 
@@ -311,6 +289,4 @@ td project list --json               # All projects
 - **Recurring tasks**: Completing creates the next occurrence automatically
 - **Overdue tasks**: Always surface these first — they need attention
 - **Vague tasks**: Ask for clarification, don't guess. Put in "Needs Input" bucket.
-- **Live trading system**: NEVER modify algo behavior. Observe and report only.
-- **SSH to remote server**: Credential manager requires biometric auth. Only .env files work for creds.
 - **Priority order**: Overdue P1 → Today P1 → Overdue P2 → Today P2 → Backlogs
