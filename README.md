@@ -7,7 +7,10 @@ Autonomous Todoist task execution for [Claude Code](https://docs.anthropic.com/e
 - **5-signal classification**: Cascading priority system (labels → project context → skill mapping → task descriptions → content keywords) for accurate task categorization
 - **Skill chaining**: Multi-step execution pipelines with approval gates, handoff data between steps, and per-step failure handling
 - **Batch mode**: Queue up autonomous tasks for walk-away execution — no babysitting required
-- **Smart categorization**: Separates tasks into Execute Now, Execute With Approval, Needs Input, and Human Only
+- **Pre-flight checks**: Verifies tool availability (SSH, browser, deploy CLI) before classifying tasks — blocks tasks whose dependencies are down
+- **Async clarification**: Posts questions as Todoist comments, reschedules, and picks up answers on next run — no blocking on user input
+- **Cross-session memory**: Tracks blocked tasks and partial progress across runs via batch file and Todoist comments
+- **Smart categorization**: Separates tasks into Execute Now, Execute With Approval, Needs Input, Blocked, and Human Only
 - **Approval gates**: Pauses before irreversible actions (posting, deploying, sending) with yes/edit/skip options
 - **Failure handling**: Per-step-type rules — tests fail? stop chain, never deploy. Post fails? retry once, then save content for manual posting
 - **Context strategy**: Automatically decides inline vs sub-agent execution based on chain type (browser-heavy = sub-agent)
@@ -75,6 +78,11 @@ Say "go" or pick numbers for inline execution. Say "batch" for walk-away mode.
 |---|------|---------------------|--------|
 | 3 | Post to Reddit | Draft 3 subreddit posts | Review & submit |
 
+### Blocked
+| Task | Reason |
+|------|--------|
+| Deploy backend | Remote server unreachable |
+
 ### Human Only
 | Task | Why |
 |------|-----|
@@ -82,7 +90,7 @@ Say "go" or pick numbers for inline execution. Say "batch" for walk-away mode.
 | Gym | Physical task |
 
 ### Quick Stats
-Total: 8 | Claude: 5 (63%) | Overdue: 1
+Total: 8 | Claude: 5 (63%) | Overdue: 1 | Blocked: 1
 ```
 
 Reply with numbers to execute, "go" for all, or "batch" for walk-away mode.
@@ -100,6 +108,35 @@ Tasks are classified using a cascading priority system. The first match wins:
 | **3. Skills** | Task content matches | "deploy" → `/deploy`, coding task → `/code-task` |
 | **4. Description** | Step-by-step instructions | Detailed description → Claude can follow it |
 | **5. Keywords** | Verb analysis (fallback) | "build" → Claude, "call" → Human |
+
+### Pre-Flight Checks
+
+Before classifying tasks, autodoist verifies that required tools are available:
+
+```
+| Capability       | Check                        | Fallback if down              |
+|-----------------|------------------------------|-------------------------------|
+| SSH to server    | ssh -o ConnectTimeout=3 ...  | Block remote tasks            |
+| Browser          | MCP tabs_context_mcp         | Save content as drafts        |
+| Deploy CLI       | vercel --version             | Skip deploy tasks             |
+```
+
+Tasks that depend on an unavailable capability go straight to "Blocked" — no wasted classification effort.
+
+### Cross-Session Memory
+
+Autodoist remembers what happened on previous runs:
+- **Blocked tasks** with the same reason are skipped (don't re-attempt until blocker is resolved)
+- **Clarification questions** posted as Todoist comments are checked for replies
+- **Partial progress** is continued from where the last run left off
+
+### Async Clarification
+
+When a task needs user input, autodoist doesn't block:
+1. Posts the question as a Todoist comment
+2. Reschedules the task to tomorrow
+3. Moves on to other tasks
+4. Next run checks for the user's reply and unblocks the task
 
 ### Execution Modes
 
@@ -144,6 +181,7 @@ Example: Content → Post chain
 | **Execute Now** | Autonomous — Claude handles end-to-end |
 | **Execute With Approval** | Claude does the work, you click send/post/submit |
 | **Needs Your Input** | Claude can do it but needs clarification first |
+| **Blocked** | Dependency unavailable or same blocker as previous run |
 | **Human Only** | Physical tasks, calls, sensitive decisions |
 
 ## Scheduling
@@ -166,6 +204,7 @@ Edit `commands/autodoist.md` to configure:
 - **Skills** (Signal 3) — add your custom `/commands` and skill chains
 - **Chain definitions** — create multi-skill sequences with gates and failure rules
 - **Capabilities** — document what your environment can and cannot do
+- **Pre-flight checks** — add checks for your specific tools and services
 
 ### Defining a Skill Chain
 

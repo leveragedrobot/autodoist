@@ -1,15 +1,42 @@
 ---
 name: autodoist
 description: Autonomous Todoist task execution. Scans all tasks, classifies using 5-signal priority system, routes to skills with chained execution, and completes what it can. Supports inline execution and batch mode for walk-away autonomy.
-version: 4.0.0
+version: 5.0.0
 ---
 
 # Autodoist
 
 Autonomous task review and execution for Todoist using the `td` CLI.
 
-## Step 1: Fetch All Tasks
+## Step 0: Pre-Flight Checks
 
+Before fetching tasks, verify the tools you'll need are available. Run all in parallel:
+
+```bash
+# td CLI works
+td today --json 2>&1 | head -1
+
+# SSH to remote servers (if applicable)
+# ssh -o ConnectTimeout=3 user@host 'echo ok' 2>&1
+
+# Check if Chrome extension is responsive (needed for posting, scheduling)
+# Skip if no content/posting tasks end up in the queue
+```
+
+Record which capabilities are available this run:
+
+| Capability | Check | Fallback if down |
+|------------|-------|-----------------|
+| SSH to remote server | `ssh -o ConnectTimeout=3 ...` | Skip remote tasks, note as blocked |
+| Browser automation | MCP `tabs_context_mcp` | Skip posting tasks, save content as drafts |
+| Deploy CLI (Vercel, etc.) | `vercel --version` | Skip deploy tasks |
+| Payment CLI (Stripe, etc.) | `stripe version` | Skip payment tasks |
+
+**If a critical dependency is down**, immediately move all tasks that require it to "Blocked" with the reason — don't waste time classifying them.
+
+## Step 1: Fetch All Tasks + Previous Results
+
+### Fetch tasks
 ```bash
 # Today + overdue (always)
 td today --json
@@ -33,6 +60,23 @@ td project list --json
 ```bash
 td task list --project "Project Name" --json
 ```
+
+### Check previous run results
+
+Check for tasks that were blocked or had questions from previous runs:
+```bash
+# Previous batch results
+cat ~/.claude/daily-batch.md 2>/dev/null
+```
+
+**Cross-session rules:**
+- If a task appears in the previous Blocked section with the same reason, **skip it** — don't re-attempt unless the blocker is resolved
+- If a task had a clarification question posted as a Todoist comment, check if the user replied:
+  ```bash
+  td comment list --task-id <id>
+  ```
+  If user replied → task is now unblocked, move to "Execute Now"
+- If a task was partially completed last run, check the comment for progress notes and continue from where it left off
 
 ## Step 2: Classify Using Signals (in priority order)
 
@@ -66,6 +110,8 @@ Define what Claude can do per project. Examples:
 | **Work projects** | Only `computer`-labeled tasks, prep/drafting only |
 | **Personal** | Research, writing, planning — NOT physical tasks |
 
+**Important:** Cross-reference with pre-flight results. If a remote server is down, all tasks that require it go straight to Blocked.
+
 Customize with your own projects and boundaries.
 
 ### Signal 3: Skill Mapping (task content → available skill)
@@ -81,8 +127,7 @@ Match task content to existing skills/commands that can execute them:
 | Coding tasks (implement, add, build, fix) | `/code-task` | Read task → implement → test → commit/PR |
 | "test" + software project | `/run-tests` | Run project test suite, report results |
 | GitHub tasks (PR, issue, code) | GitHub MCP tools | Direct API access |
-
-When a task matches a multi-skill pattern (e.g., content → post), execute it as a **skill chain**. See [Skill Chains](#skill-chains) for the full protocol.
+| "content", "draft", "write post" | `/content-post` | Brainstorm or generate content interactively |
 
 **Skill chaining:** When a task maps to multiple skills, execute them in sequence automatically. Present content for approval between generation and posting steps.
 
@@ -90,6 +135,8 @@ When a task matches a multi-skill pattern (e.g., content → post), execute it a
 ```bash
 ls ~/.claude/commands/  # List all available skills
 ```
+
+Add your own skill mappings here as you create new `/commands`.
 
 ### Signal 4: Task Description
 
@@ -105,34 +152,9 @@ Only use if signals 1-4 are inconclusive:
 - Digital verbs: "create", "build", "write", "research", "set up", "configure", "test", "draft", "update code" → Claude
 - Ambiguous: "set up" (digital setup = Claude, physical setup = Human)
 
-## Step 3: Categorize into Buckets
+## Step 3: Present Summary
 
 After classification, sort each bucket by priority (P1 first → P4 last). Flag overdue P1/P2 as URGENT.
-
-**🔀 Skill Routed** (delegated to dedicated skills — most reliable execution)
-
-**✅ Can Complete** (from ALL tasks — execute autonomously after approval):
-- Research, lookups, fact-finding
-- Writing, drafting, summarizing
-- Code tasks, file operations, debugging
-- Data analysis, calculations
-- Planning, scheduling, organizing
-- Building/creating things (websites, scripts, skills)
-
-**⚠️ Need Approval** (from today/inbox/upcoming — require explicit confirmation):
-- Sending messages/emails
-- Purchases, payments
-- Deletions, destructive actions
-- External service calls (posting to social media, etc.)
-
-**🚫 Human Required** (from today/inbox/upcoming — cannot be done by agent):
-- Physical tasks (errands, cleaning, exercise, medical)
-- Sensitive personal decisions
-- Waiting on others / blocked tasks
-- In-person meetings or calls
-- Work systems requiring VPN or special login
-
-## Step 4: Present Summary
 
 ```
 ## Todoist Daily Review - [Today's Date]
@@ -156,6 +178,12 @@ After classification, sort each bucket by priority (P1 first → P4 last). Flag 
 |---|------|---------|----------|
 | 1 | Feature upgrades | App | Which features? |
 
+### Blocked (from pre-flight or previous run)
+| Task | Project | Reason |
+|------|---------|--------|
+| Deploy backend fix | Backend | Remote server unreachable |
+| Fix scanner timeout | Backend | Same blocker as yesterday |
+
 ### Human Only
 | Task | Project | Why |
 |------|---------|-----|
@@ -166,10 +194,28 @@ After classification, sort each bucket by priority (P1 first → P4 last). Flag 
 - Total reviewed: X
 - Claude can execute: X (Y%)
 - Overdue: X (list them)
-- Blocked by human input: X
+- Blocked by pre-flight: X
+- Carried over from previous run: X
 ```
 
 **Priority order**: Overdue P1 → Today P1 → Overdue P2 → Today P2 → Backlogs
+
+## Step 4: Handle "Needs Your Input" Tasks
+
+Before executing approved tasks, handle clarification needs **asynchronously** so they don't stay stuck:
+
+For each task in "Needs Your Input":
+1. Post the question as a Todoist comment:
+   ```bash
+   td comment add --task-id <id> "Question from Claude: [specific question]. Reply here and I'll pick it up next run."
+   ```
+2. Reschedule to tomorrow so it resurfaces:
+   ```bash
+   td task update <id> --due "tomorrow"
+   ```
+3. Move on — don't wait for an answer this run.
+
+On the **next autodoist run**, Step 1 will check for replies to these comments. If the user answered, the task moves to "Execute Now."
 
 ## Step 5: Execute Approved Tasks
 
@@ -234,12 +280,12 @@ Execute tasks in the current session:
 
 7. **Add completion notes** to tasks with context:
    ```bash
-   td comment add --task-id <task-id> "Completed: [what was done]"
+   td comment add --task-id <task-id> "Completed by Claude: [what was done]"
    ```
 
 ## Skill Chains
 
-A skill chain is an ordered sequence of skills where each step's output feeds the next. Chains have **approval gates** (pause for user confirmation) and **failure rules** (what happens when a step breaks).
+A skill chain is an ordered sequence of skills where each step's output feeds the next. Chains have **approval gates** and **failure rules**.
 
 ### Chain Protocol
 
@@ -267,7 +313,7 @@ Gates prevent irreversible actions without user consent. A gate pauses the chain
 
 **Always gate before:**
 - Posting to social media (Twitter, Reddit, etc.)
-- Sending messages (email, Slack, Telegram)
+- Sending messages (email, Slack, etc.)
 - Deploying to production
 - Publishing content
 - Any action visible to others
@@ -368,39 +414,61 @@ Present any low-hanging fruit: tasks with clear descriptions, test tasks, small 
 
 ## Step 7: Error Handling
 
-**When blocked on a "Can Complete" task:**
+### Blocked tasks
 1. Do NOT mark complete
 2. Add comment explaining the blocker:
    ```bash
    td comment add --task-id <id> "Blocked: [reason]. Needs: [what's required to proceed]"
    ```
-3. Move to "Need Approval" category in next review with explanation
+3. The task stays open — next autodoist run will check if the blocker is resolved
 4. Optionally reschedule if appropriate:
    ```bash
    td task update <id> --due "tomorrow"
    ```
 
-**When partially complete:**
-1. Create subtasks for remaining work
+### Partially complete tasks
+1. Create subtasks for remaining work:
+   ```bash
+   td add "Remaining: [what's left]" --parent-id <id>
+   ```
 2. Add comment noting progress made
 3. Complete only the subtasks that are done, not the parent
+
+### Chain failures
+Follow the failure handling table in Skill Chains. Always log what step failed and why. Never mark a task complete if the chain didn't finish.
 
 ## Scheduled Run Behavior
 
 When triggered by cron or scheduled automation:
+- Run pre-flight checks
+- Classify all tasks
 - Message user with summary (via Telegram, Slack, or preferred channel)
-- Wait for reply before executing anything
+- **Wait for reply before executing anything**
 - If no actionable tasks, send brief "Nothing needs attention" or skip message entirely
 - Prioritize URGENT (overdue P1/P2) items at top of message
 
-## Customization
+## Capabilities Reference
 
-Edit this file to add your own:
-- **Labels** (Signal 1): Map your Todoist labels
-- **Projects** (Signal 2): Define per-project capabilities
-- **Skills** (Signal 3): Add your custom `/commands`
-- **Chains**: Define multi-skill sequences with gates
-- **Capabilities**: What your setup can/cannot do
+Document what your setup can and cannot do. This helps autodoist make accurate classification decisions.
+
+**Example capabilities:**
+- `td` CLI (Todoist)
+- `gh` CLI (GitHub)
+- Deploy CLI (Vercel, Netlify, etc.)
+- Browser automation (Chrome via MCP)
+- SSH to remote servers
+- Local codebases
+- GitHub MCP (PRs, issues, code search)
+
+**Example limitations:**
+- Password manager with biometric auth (can't unlock headlessly)
+- Employer-specific systems (VPN, HR portals)
+- Physical tasks
+- Phone calls
+- Financial transactions (trading, purchases)
+- Post to social media without user confirmation
+
+Customize this section with your actual environment.
 
 ## Quick Reference: td CLI Commands
 
@@ -429,6 +497,6 @@ td project list --json               # All projects
 
 - **Recurring tasks**: Completing creates the next occurrence automatically
 - **Overdue tasks**: Always surface these first — they need attention
-- **Vague tasks**: Ask for clarification, don't guess. Put in "Needs Input" bucket.
+- **Vague tasks**: Ask clarification via Todoist comment, reschedule to tomorrow, move on
 - **Never mark Human Required tasks complete** — only report them.
 - **Priority order**: Overdue P1 → Today P1 → Overdue P2 → Today P2 → Backlogs
