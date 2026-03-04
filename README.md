@@ -1,18 +1,18 @@
 # Autodoist
 
-Autonomous Todoist task execution for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and [Clawdbot](https://clawd.bot). Scans your tasks, classifies them using a 5-signal priority system, routes to dedicated skills with chained execution, and completes what it can — with your approval.
+Autonomous Todoist task execution for [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Scans your tasks, classifies them using a 5-signal priority system, routes to dedicated skills with chained execution, and completes what it can — with your approval.
 
 ## Features
 
 - **5-signal classification**: Cascading priority system (labels → project context → skill mapping → task descriptions → content keywords) for accurate task categorization
 - **Skill chaining**: Multi-step execution pipelines with approval gates, handoff data between steps, and per-step failure handling
-- **Smart categorization**: Separates tasks into Skill Routed, Can Complete, Need Approval, and Human Required
+- **Batch mode**: Queue up autonomous tasks for walk-away execution — no babysitting required
+- **Smart categorization**: Separates tasks into Execute Now, Execute With Approval, Needs Input, and Human Only
 - **Approval gates**: Pauses before irreversible actions (posting, deploying, sending) with yes/edit/skip options
-- **Failure handling**: Per-step-type rules — tests fail? never deploy. Post fails? retry once, then save content for manual posting
+- **Failure handling**: Per-step-type rules — tests fail? stop chain, never deploy. Post fails? retry once, then save content for manual posting
 - **Context strategy**: Automatically decides inline vs sub-agent execution based on chain type (browser-heavy = sub-agent)
 - **Priority ordering**: P1 tasks first, with URGENT flags for overdue items
 - **Work logging**: Adds comments to completed tasks documenting what was done
-- **Batch execution**: Groups similar tasks for efficiency
 - **Backlog sweeping**: Scans project backlogs for undated tasks after handling today's items
 
 ## Prerequisites
@@ -60,31 +60,32 @@ In any Claude Code session:
 Claude will analyze your tasks and present a categorized summary:
 
 ```
-🤖 AUTODOIST
+## Todoist Daily Review - 2026-03-04
 
-🔀 SKILL ROUTED
-1. Complete managers schedule → /schedule-maker
-   ⚠️ OVERDUE (Jan 19)
+### Execute Now (Claude does these autonomously)
+| # | Task | Project | How Claude Does It |
+|---|------|---------|-------------------|
+| 1 | Write unit tests | Backend | /code-task → /run-tests |
+| 2 | Research pricing tools | Side Project | Web search + compile |
 
-✅ CAN COMPLETE
-2. Research competitor pricing
-   Work | P1
-3. Write README for new project
-   Side Projects | P2
+Say "go" or pick numbers for inline execution. Say "batch" for walk-away mode.
 
-⚠️ NEED APPROVAL
-4. Post update to Twitter
-   P2 | ⚠️ OVERDUE (Today)
+### Execute With Approval
+| # | Task | What Claude Prepares | You Do |
+|---|------|---------------------|--------|
+| 3 | Post to Reddit | Draft 3 subreddit posts | Review & submit |
 
-🚫 HUMAN REQUIRED
-• Call dentist — P1 ⚠️ URGENT (Tomorrow)
-• Gym workout — P4 Today
+### Human Only
+| Task | Why |
+|------|-----|
+| Call dentist | Phone call |
+| Gym | Physical task |
 
-📊 STATS
-Total: 8 | Claude: 4 (50%) | Overdue: 2 | Blocked: 1
-
-Reply with numbers to execute (e.g., "1, 2") or "all".
+### Quick Stats
+Total: 8 | Claude: 5 (63%) | Overdue: 1
 ```
+
+Reply with numbers to execute, "go" for all, or "batch" for walk-away mode.
 
 ## How It Works
 
@@ -99,6 +100,12 @@ Tasks are classified using a cascading priority system. The first match wins:
 | **3. Skills** | Task content matches | "deploy" → `/deploy`, coding task → `/code-task` |
 | **4. Description** | Step-by-step instructions | Detailed description → Claude can follow it |
 | **5. Keywords** | Verb analysis (fallback) | "build" → Claude, "call" → Human |
+
+### Execution Modes
+
+**Inline mode** (`go` or pick numbers): Execute tasks in the current session with real-time feedback.
+
+**Batch mode** (`batch`): Queue autonomous tasks to a batch file and execute them sequentially. Tasks that succeed get marked complete; tasks that fail get logged with the blocker reason. Walk away and come back to results.
 
 ### Skill Chains
 
@@ -130,48 +137,25 @@ Example: Content → Post chain
 | Deploy | Stop chain, log error |
 | Browser automation | Retry once, then stop (browser state may be stale) |
 
-**Context strategy** keeps autodoist efficient:
-
-| Chain Type | Strategy |
-|-----------|----------|
-| Text-only (research, content) | Inline |
-| Code → Test → Deploy | Inline |
-| Browser-heavy (scheduling, ordering) | Sub-agent |
-
 ### Task Categories
 
-| Category | Source | Description |
-|----------|--------|-------------|
-| **Skill Routed** | All tasks | Delegated to skill chains |
-| **Can Complete** | All tasks | Research, writing, code, planning |
-| **Need Approval** | Today/Inbox/Upcoming | Posts, emails, purchases, deletions |
-| **Human Required** | Today/Inbox/Upcoming | Physical tasks, calls, sensitive decisions |
+| Category | Description |
+|----------|-------------|
+| **Execute Now** | Autonomous — Claude handles end-to-end |
+| **Execute With Approval** | Claude does the work, you click send/post/submit |
+| **Needs Your Input** | Claude can do it but needs clarification first |
+| **Human Only** | Physical tasks, calls, sensitive decisions |
 
-### Execution Flow
+## Scheduling
 
-1. Fetches tasks via `td` CLI (today, inbox, upcoming, backlogs)
-2. Classifies each task using the 5-signal cascade
-3. Categorizes into buckets, sorted by priority
-4. Presents summary with stats
-5. Executes approved tasks — single skills or full chains
-6. Logs work, marks complete, creates follow-up tasks
-7. Sweeps project backlogs for low-hanging fruit
+Set up a cron job to run Autodoist automatically:
 
-## Scheduling (Clawdbot)
-
-If using with [Clawdbot](https://clawd.bot), set up a cron job to run Autodoist automatically:
-
-**Recommended: 3x daily** (saves tokens vs hourly)
 ```bash
-# Cron schedule: 7am, 12pm, 5pm
-clawdbot cron add --name autodoist --schedule "0 7,12,17 * * *" --tz America/New_York
+# 3x daily at 7am, 12pm, 5pm
+0 7,12,17 * * * cd /path/to/project && claude -p "/autodoist"
 ```
 
-**Alternative: Hourly during work hours**
-```bash
-# Every hour from 7am-8pm
-clawdbot cron add --name autodoist --schedule "0 7-20 * * *" --tz America/New_York
-```
+When triggered by cron, autodoist messages you with a summary and waits for your reply before executing anything.
 
 ## Customization
 

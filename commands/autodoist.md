@@ -1,7 +1,7 @@
 ---
 name: autodoist
-description: Autonomous Todoist task execution. Scans all tasks, classifies using 5-signal priority system, routes to skills, and completes what it can — with your approval.
-version: 2.1.0
+description: Autonomous Todoist task execution. Scans all tasks, classifies using 5-signal priority system, routes to skills with chained execution, and completes what it can. Supports inline execution and batch mode for walk-away autonomy.
+version: 4.0.0
 ---
 
 # Autodoist
@@ -72,16 +72,19 @@ Customize with your own projects and boundaries.
 
 Match task content to existing skills/commands that can execute them:
 
-| Task Pattern | Skill | Execution Method |
-|-------------|-------|-----------------|
+| Task Pattern | Skill Chain | Execution Method |
+|-------------|------------|-----------------|
 | "tweet", "post to twitter/X" | `/content-post` → `/post-to-x` | Generate content → post via browser → mark done |
-| "reddit", "post to reddit" | `/content-post` | Draft posts (user submits) |
-| "deploy" | `/deploy` | Git push + monitoring |
+| "reddit", "post to reddit" | `/content-post` | Draft subreddit-specific posts (user submits) |
+| "deploy" + web project | `/deploy` | Git push + monitoring |
+| "deploy" + backend/algo | `/deploy-backend` | SSH + restart service |
 | Coding tasks (implement, add, build, fix) | `/code-task` | Read task → implement → test → commit/PR |
-| "test" + software project | `/run-tests` | Run test suite, report results |
+| "test" + software project | `/run-tests` | Run project test suite, report results |
 | GitHub tasks (PR, issue, code) | GitHub MCP tools | Direct API access |
 
 When a task matches a multi-skill pattern (e.g., content → post), execute it as a **skill chain**. See [Skill Chains](#skill-chains) for the full protocol.
+
+**Skill chaining:** When a task maps to multiple skills, execute them in sequence automatically. Present content for approval between generation and posting steps.
 
 **Discovering your skills:**
 ```bash
@@ -131,84 +134,108 @@ After classification, sort each bucket by priority (P1 first → P4 last). Flag 
 
 ## Step 4: Present Summary
 
-Format for Telegram (no markdown tables). Use invisible character (U+200E) before blank lines to preserve spacing between sections:
-
 ```
-🤖 **AUTODOIST**
+## Todoist Daily Review - [Today's Date]
 
-🔀 **SKILL ROUTED**
-1. Complete managers schedule → `/schedule-maker`
-   ⚠️ OVERDUE (Jan 19)
-‎
-✅ **CAN COMPLETE**
-2. Research competitor pricing
-   Work | P1
-3. Write README for new project
-   Side Projects | P2
-‎
-⚠️ **NEED APPROVAL**
-4. Post update to Twitter
-   P2 | ⚠️ OVERDUE (Today)
-5. Order office supplies
-   P3
-‎
-🚫 **HUMAN REQUIRED**
-• Call dentist — P1 ⚠️ URGENT (Tomorrow)
-• Gym workout — P4 Today
-‎
-📊 **STATS**
-Total: X | Claude: X (Y%) | Overdue: X | Blocked: X
+### Execute Now (Claude does these autonomously)
+| # | Task | Project | How Claude Does It |
+|---|------|---------|-------------------|
+| 1 | Write unit tests | Backend | `/code-task` → `/run-tests` |
+| 2 | Research pricing tools | Side Project | Web search + compile findings |
 
-Reply with numbers to execute (e.g., "1, 2") or "all".
+**Say "go" or pick numbers for inline execution. Say "batch" for walk-away mode.**
+
+### Execute With Approval (Claude does the work, you click "send/post/submit")
+| # | Task | Project | What Claude Prepares | You Do |
+|---|------|---------|---------------------|--------|
+| 1 | Post to Reddit | Product | Draft 3 subreddit posts | Review & submit |
+| 2 | Product Hunt launch | Product | Prep submission content | Submit on PH |
+
+### Needs Your Input First (Claude can do it but needs clarification)
+| # | Task | Project | Question |
+|---|------|---------|----------|
+| 1 | Feature upgrades | App | Which features? |
+
+### Human Only
+| Task | Project | Why |
+|------|---------|-----|
+| Call dentist | Personal | Phone call |
+| Gym workout | Personal | Physical task |
+
+### Quick Stats
+- Total reviewed: X
+- Claude can execute: X (Y%)
+- Overdue: X (list them)
+- Blocked by human input: X
 ```
 
-**Formatting rules:**
-- Headers: Bold with emoji prefix, no description text below
-- Numbered items (1-N): Executable tasks (Skill Routed, Can Complete, Need Approval)
-- Bullet items (•): Human Required (not numbered since not executable)
-- Blank line with U+200E character before each section header
-- No blank line between header and its items
-- Task details on second line, indented with spaces
-- Priority order: Overdue P1 → Today P1 → Overdue P2 → Today P2 → Backlogs
+**Priority order**: Overdue P1 → Today P1 → Overdue P2 → Today P2 → Backlogs
 
 ## Step 5: Execute Approved Tasks
 
-When user approves (by number, "all", or "go"):
+When user approves, check which execution mode they chose:
 
-**Batch similar tasks** for efficiency:
-1. Group research tasks together (shared context)
-2. Group code tasks in same project together
-3. Execute skill-routed tasks via their skill chains
+### Batch Mode (user says "batch")
 
-**For each approved task:**
+Only **"Execute Now"** tasks go into the batch. "Execute With Approval" tasks require user interaction and cannot be batched.
 
-1. **Check if task maps to a skill chain** — follow the chain protocol in [Skill Chains](#skill-chains)
+1. Write approved tasks to `.claude/daily-batch.md`:
 
-2. **Single-skill tasks** — invoke the skill directly
+```markdown
+# Daily Batch - [today's date]
 
-3. **Non-skill tasks** (research, writing, etc.) — execute inline
+## Pending
+- [ ] <todoist-id> | <task title> | <project> | <skill>
+- [ ] <todoist-id> | <task title> | <project> | <skill>
 
-4. **Log the work**: Add comment summarizing what was done
+## Completed
+(none yet)
+
+## Blocked
+(none yet)
+```
+
+Each line includes the Todoist task ID, title, project name, and the skill or method to execute it.
+
+2. Execute each task sequentially. On success, move to Completed. On failure, move to Blocked with reason.
+
+3. Mark completed tasks in Todoist:
    ```bash
-   td comment add --task-id <id> "Completed: [brief summary of work done]"
+   td task complete <task-id>
    ```
 
-5. **Handle subtasks**: If task is complex, create subtasks instead of partial completion
+4. If there are also "Execute With Approval" tasks, mention them after the batch completes.
+
+### Inline Mode (user says "go", picks numbers, or anything else)
+
+Execute tasks in the current session:
+
+1. **Check if task maps to a skill chain** — invoke skills in sequence:
+   - Content → post: `/content-post` (generate) → present for approval → `/post-to-x` (post)
+   - Deploy: `/deploy` or project-specific deploy command
+   - Code tasks: `/code-task`
+   - Test tasks: `/run-tests`
+
+2. **Code tasks** — navigate to project, read existing code, implement
+
+3. **Content tasks** — generate via `/content-post`, present for approval, then post if confirmed
+
+4. **Research tasks** — search web/notes, compile findings
+
+5. **Mark complete** after verified done:
    ```bash
-   td add "Subtask description" --parent-id <id>
+   td task complete <task-id>
    ```
 
-6. **Mark complete**: Only after fully done
-   ```bash
-   td task complete "id:<id>"  # id: prefix required!
-   ```
-
-7. **Add follow-up tasks** if work spawns new items:
+6. **Add follow-up tasks** if work spawns new items:
    ```bash
    td add "Follow-up task #ProjectName"
    ```
 
-**Never mark Human Required tasks complete** — only report them.
+7. **Add completion notes** to tasks with context:
+   ```bash
+   td comment add --task-id <task-id> "Completed: [what was done]"
+   ```
 
 ## Skill Chains
 
@@ -266,8 +293,6 @@ Proceed? (yes / edit / skip)
 
 ### Failure Handling
 
-What happens when a step in the chain fails:
-
 | Step Type | On Failure | Action |
 |-----------|-----------|--------|
 | **Generate** (content, code) | Retry once with adjusted approach | If second attempt fails, log blocker and stop |
@@ -290,14 +315,7 @@ Not all chains should run in the main autodoist context. Browser-heavy chains bu
 | Research → Write | **Inline** | Text-only, fast, benefits from autodoist context |
 | Code → Test | **Inline** | Needs project context already loaded |
 | Content → Post (browser) | **Inline if short**, sub-agent if complex | Simple tweet = inline; multi-platform campaign = sub-agent |
-| Browser automation (scheduling, ordering) | **Sub-agent** | Heavy DOM interaction, protect autodoist context |
-
-**Spawning a sub-agent:**
-```
-sessions_spawn task="Execute [chain description]. Task ID: [id]. Confirm with user before [gate actions]. Mark Todoist task complete when done: td task complete 'id:<id>'"
-```
-
-The sub-agent gets the full chain instructions and handles it independently. Autodoist moves on to the next task.
+| Browser automation | **Sub-agent** | Heavy DOM interaction, protect autodoist context |
 
 ### Example Chains
 
@@ -340,7 +358,7 @@ Steps:
 
 ## Step 6: Sweep Project Backlogs
 
-After handling today's tasks, scan project backlogs for undated tasks Claude can knock out:
+After handling today's tasks, scan software project backlogs for undated tasks Claude can knock out:
 
 ```bash
 td task list --project "Project Name" --json
@@ -359,7 +377,7 @@ Present any low-hanging fruit: tasks with clear descriptions, test tasks, small 
 3. Move to "Need Approval" category in next review with explanation
 4. Optionally reschedule if appropriate:
    ```bash
-   td task update "id:<id>" --due "tomorrow"
+   td task update <id> --due "tomorrow"
    ```
 
 **When partially complete:**
@@ -369,8 +387,8 @@ Present any low-hanging fruit: tasks with clear descriptions, test tasks, small 
 
 ## Scheduled Run Behavior
 
-When triggered by cron:
-- Message user on Telegram with summary
+When triggered by cron or scheduled automation:
+- Message user with summary (via Telegram, Slack, or preferred channel)
 - Wait for reply before executing anything
 - If no actionable tasks, send brief "Nothing needs attention" or skip message entirely
 - Prioritize URGENT (overdue P1/P2) items at top of message
@@ -395,10 +413,11 @@ td task list --project "Name" --json # Project tasks
 td task view <id> --json             # Full task details
 td task list --json                  # All tasks
 
-# Execute (IMPORTANT: use "id:<id>" prefix for task operations!)
-td task complete "id:<id>"           # Mark complete
-td add "Task" --parent-id <id>      # Add subtask
-td task update "id:<id>" --due "tomorrow"  # Reschedule
+# Execute
+td task complete <id>                # Mark done
+td add "Task text #Project"          # Create task
+td add "Subtask" --parent-id <id>   # Add subtask
+td task update <id> --due "tomorrow" # Reschedule
 
 # Context
 td comment add --task-id <id> "text" # Add note
@@ -411,4 +430,5 @@ td project list --json               # All projects
 - **Recurring tasks**: Completing creates the next occurrence automatically
 - **Overdue tasks**: Always surface these first — they need attention
 - **Vague tasks**: Ask for clarification, don't guess. Put in "Needs Input" bucket.
+- **Never mark Human Required tasks complete** — only report them.
 - **Priority order**: Overdue P1 → Today P1 → Overdue P2 → Today P2 → Backlogs
