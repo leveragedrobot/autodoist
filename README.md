@@ -13,6 +13,7 @@ Autonomous Todoist task execution for [Claude Code](https://docs.anthropic.com/e
 - **Smart categorization**: Separates tasks into Execute Now, Execute With Approval, Needs Input, Blocked, and Human Only
 - **Approval gates**: Pauses before irreversible actions (posting, deploying, sending) with yes/edit/skip options
 - **Failure handling**: Per-step-type rules — tests fail? stop chain, never deploy. Post fails? retry once, then save content for manual posting
+- **Remote session spawning**: Say "remote" to spawn a Claude Code session accessible from the iOS app — monitor tasks, approve gates, and interact from your phone
 - **Context strategy**: Automatically decides inline vs sub-agent execution based on chain type (browser-heavy = sub-agent)
 - **Priority ordering**: P1 tasks first, with URGENT flags for overdue items
 - **Work logging**: Adds comments to completed tasks documenting what was done
@@ -93,7 +94,7 @@ Say "go" or pick numbers for inline execution. Say "batch" for walk-away mode.
 Total: 8 | Claude: 5 (63%) | Overdue: 1 | Blocked: 1
 ```
 
-Reply with numbers to execute, "go" for all, or "batch" for walk-away mode.
+Reply with numbers to execute, "go" for all, "batch" for walk-away mode, or "remote" to spawn a session you can access from the iOS app.
 
 ## How It Works
 
@@ -143,6 +144,8 @@ When a task needs user input, autodoist doesn't block:
 **Inline mode** (`go` or pick numbers): Execute tasks in the current session with real-time feedback.
 
 **Batch mode** (`batch`): Queue autonomous tasks to a batch file and execute them sequentially. Tasks that succeed get marked complete; tasks that fail get logged with the blocker reason. Walk away and come back to results.
+
+**Remote mode** (`remote`): Spawn a new Claude Code remote session (`claude --remote`) with your approved tasks. The session runs independently and is accessible from the Claude iOS app or any browser. Approval gates appear inline in the remote session, so you can review and approve from your phone. The session URL is saved to the batch file for cross-session tracking.
 
 ### Skill Chains
 

@@ -31,6 +31,7 @@ Record which capabilities are available this run:
 | Browser automation | MCP `tabs_context_mcp` | Skip posting tasks, save content as drafts |
 | Deploy CLI (Vercel, etc.) | `vercel --version` | Skip deploy tasks |
 | Payment CLI (Stripe, etc.) | `stripe version` | Skip payment tasks |
+| Remote sessions (iOS/mobile) | `claude --help 2>&1 \| grep -q remote` | Fall back to batch mode |
 
 **If a critical dependency is down**, immediately move all tasks that require it to "Blocked" with the reason — don't waste time classifying them.
 
@@ -165,7 +166,7 @@ After classification, sort each bucket by priority (P1 first → P4 last). Flag 
 | 1 | Write unit tests | Backend | `/code-task` → `/run-tests` |
 | 2 | Research pricing tools | Side Project | Web search + compile findings |
 
-**Say "go" or pick numbers for inline execution. Say "batch" for walk-away mode.**
+**Say "go" or pick numbers for inline execution. Say "batch" for walk-away mode. Say "remote" to spawn a session accessible from the iOS app.**
 
 ### Execute With Approval (Claude does the work, you click "send/post/submit")
 | # | Task | Project | What Claude Prepares | You Do |
@@ -251,6 +252,65 @@ Each line includes the Todoist task ID, title, project name, and the skill or me
    ```
 
 4. If there are also "Execute With Approval" tasks, mention them after the batch completes.
+
+### Remote Mode (user says "remote")
+
+Spawn a new Claude Code remote session to execute tasks. The session runs in the background and is accessible from the Claude iOS app (or any device) for monitoring and interaction.
+
+1. **Spawn the remote session** with the batch payload:
+
+```bash
+# Build the task list as a prompt
+TASK_PROMPT="Run /autodoist batch execution for these tasks:\n"
+# Append each approved task
+for task in approved_tasks; do
+  TASK_PROMPT+="- [${task_id}] ${task_title} (${project}) → ${skill}\n"
+done
+
+# Launch a remote Claude Code session
+claude -p "$TASK_PROMPT" --remote &
+```
+
+2. **Capture the session URL** from the CLI output — it will print a URL like:
+```
+Remote session started: https://claude.ai/code/session_<id>
+```
+
+3. **Present the session link** to the user:
+```
+Remote session spawned. Open it from your iOS app or any browser:
+→ https://claude.ai/code/session_<id>
+
+The session will:
+- Execute your [N] approved tasks sequentially
+- Log progress as Todoist comments on each task
+- Mark tasks complete as they finish
+- Stop and wait for your input at approval gates
+
+You can close this session — the remote session runs independently.
+```
+
+4. **Write the session reference** to the batch file for cross-session tracking:
+```markdown
+# Remote Session - [today's date]
+Session URL: https://claude.ai/code/session_<id>
+Status: running
+
+## Dispatched
+- [ ] <todoist-id> | <task title> | <project> | <skill>
+```
+
+5. **"Execute With Approval" tasks** work in remote sessions too — the iOS app shows approval gates inline, so the user can approve from their phone.
+
+**When to suggest remote mode:**
+- User is on mobile or about to leave their desk
+- Batch has 3+ tasks that will take a while
+- Tasks include approval gates the user wants to handle from their phone
+- User explicitly says "remote", "run on my phone", or "iOS"
+
+**Remote session pre-flight:**
+- Verify `claude --remote` is available: `claude --help 2>&1 | grep -q remote`
+- If not available, fall back to batch mode and explain why
 
 ### Inline Mode (user says "go", picks numbers, or anything else)
 
@@ -444,6 +504,7 @@ When triggered by cron or scheduled automation:
 - Classify all tasks
 - Message user with summary (via Telegram, Slack, or preferred channel)
 - **Wait for reply before executing anything**
+- If user replies "remote" or "ios", spawn a remote session with the approved tasks — the user can monitor and interact from the Claude iOS app
 - If no actionable tasks, send brief "Nothing needs attention" or skip message entirely
 - Prioritize URGENT (overdue P1/P2) items at top of message
 
@@ -459,6 +520,7 @@ Document what your setup can and cannot do. This helps autodoist make accurate c
 - SSH to remote servers
 - Local codebases
 - GitHub MCP (PRs, issues, code search)
+- Remote session spawning (`claude --remote` for iOS/mobile access)
 
 **Example limitations:**
 - Password manager with biometric auth (can't unlock headlessly)
