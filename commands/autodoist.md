@@ -128,6 +128,10 @@ Match task content to existing skills/commands that can execute them:
 | "test" + software project | `/run-tests` | Run project test suite, report results |
 | GitHub tasks (PR, issue, code) | GitHub MCP tools | Direct API access |
 | "content", "draft", "write post" | `/content-post` | Brainstorm or generate content interactively |
+| "deploy" + remote project | `/remote-control-spawn` → `/deploy` | Spawn Claude on remote host → deploy → verify |
+| "fix"/"debug" + server/backend | `/remote-control-spawn` → `/code-task` | Spawn on remote → implement fix → test |
+| "check logs", "investigate" + server | `/remote-control-spawn` | Spawn on remote → analyze → report findings |
+| "restart", "configure" + service | `/remote-control-spawn` | Spawn on remote → execute → verify |
 
 **Skill chaining:** When a task maps to multiple skills, execute them in sequence automatically. Present content for approval between generation and posting steps.
 
@@ -362,6 +366,7 @@ Not all chains should run in the main autodoist context. Browser-heavy chains bu
 | Code → Test | **Inline** | Needs project context already loaded |
 | Content → Post (browser) | **Inline if short**, sub-agent if complex | Simple tweet = inline; multi-platform campaign = sub-agent |
 | Browser automation | **Sub-agent** | Heavy DOM interaction, protect autodoist context |
+| Remote server tasks | **Remote spawn** (`/remote-control-spawn`) | Spawns Claude on the remote host via SSH — runs entirely on-server, returns structured result |
 
 ### Example Chains
 
@@ -386,6 +391,16 @@ Not all chains should run in the main autodoist context. Browser-heavy chains bu
 4. /deploy          → pushes to production
    HANDOFF: deploy URL
 5. Log + complete   → add comment with deploy URL, mark task done
+```
+
+**Remote Fix → Test chain:**
+```
+1. /remote-control-spawn → spawns Claude on remote host with task payload
+   HANDOFF: result block (status, summary, files changed)
+   ON FAIL: log blocker, stop chain
+2. Parse result          → check status field
+   ON FAIL: log remote error, keep task open
+3. Log + complete        → comment on task with remote summary, mark done
 ```
 
 **Defining your own chains:**
